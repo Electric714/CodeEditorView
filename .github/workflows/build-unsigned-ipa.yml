@@ -66,13 +66,6 @@ PY
         run: |
           set -euo pipefail
           schemes_file="build/schemes.txt"
-          shared_dir=""
-          if [[ "${{ steps.container.outputs.container_flag }}" == "-workspace" ]]; then
-            shared_dir="${{ steps.container.outputs.container }}/xcshareddata/xcschemes"
-          else
-            shared_dir="${{ steps.container.outputs.container }}/xcshareddata/xcschemes"
-          fi
-
           python3 - <<'PY' > "$schemes_file"
 import json
 from pathlib import Path
@@ -86,10 +79,6 @@ PY
 
           selected=""
           while IFS= read -r scheme; do
-            if [[ ! -f "${shared_dir}/${scheme}.xcscheme" ]]; then
-              echo "Skipping non-shared scheme: ${scheme}"
-              continue
-            fi
             if xcodebuild -showBuildSettings \
               "${{ steps.container.outputs.container_flag }}" \
               "${{ steps.container.outputs.container }}" \
@@ -103,7 +92,7 @@ PY
           done < "$schemes_file"
 
           if [[ -z "$selected" ]]; then
-            echo "No shared iOS-capable scheme found. Ensure the iOS scheme is shared in xcshareddata/xcschemes." >&2
+            echo "No iOS-capable scheme found. Ensure the iOS scheme is shared." >&2
             exit 1
           fi
 
