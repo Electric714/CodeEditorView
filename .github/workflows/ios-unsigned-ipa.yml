@@ -1,0 +1,48 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-unsigned-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift package dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project DemoApp/CodeEditorViewDemo.xcodeproj \
+            -scheme CodeEditorViewDemo
+
+      - name: Archive unsigned app
+        run: |
+          xcodebuild archive \
+            -project DemoApp/CodeEditorViewDemo.xcodeproj \
+            -scheme CodeEditorViewDemo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/CodeEditorViewDemo.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY=""
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/CodeEditorViewDemo.xcarchive/Products/Applications/CodeEditorViewDemo.app build/Payload/
+          cd build
+          /usr/bin/zip -r CodeEditorViewDemo-unsigned.ipa Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeEditorViewDemo-unsigned-ipa
+          path: build/CodeEditorViewDemo-unsigned.ipa

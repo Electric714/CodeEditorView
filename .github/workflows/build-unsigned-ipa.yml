@@ -39,14 +39,6 @@ jobs:
           echo "container=${container}" >> "$GITHUB_OUTPUT"
           echo "container_flag=${container_flag}" >> "$GITHUB_OUTPUT"
 
-      - name: Print xcodebuild list output
-        run: |
-          set -euo pipefail
-          xcodebuild -list \
-            "${{ steps.container.outputs.container_flag }}" \
-            "${{ steps.container.outputs.container }}" \
-            | tee build/xcodebuild-list.txt
-
       - name: List schemes
         id: schemes
         run: |
@@ -74,13 +66,6 @@ PY
         run: |
           set -euo pipefail
           schemes_file="build/schemes.txt"
-          shared_dir=""
-          if [[ "${{ steps.container.outputs.container_flag }}" == "-workspace" ]]; then
-            shared_dir="${{ steps.container.outputs.container }}/xcshareddata/xcschemes"
-          else
-            shared_dir="${{ steps.container.outputs.container }}/xcshareddata/xcschemes"
-          fi
-
           python3 - <<'PY' > "$schemes_file"
 import json
 from pathlib import Path
@@ -94,58 +79,25 @@ PY
 
           selected=""
           while IFS= read -r scheme; do
-            if [[ "$scheme" == "CodeEditorViewDemo" ]]; then
-              echo "Skipping forbidden scheme name: ${scheme}"
-              continue
-            fi
-            if [[ ! -f "${shared_dir}/${scheme}.xcscheme" ]]; then
-              echo "Skipping non-shared scheme: ${scheme}"
-              continue
-            fi
-            destinations_log="build/showdestinations-${scheme}.txt"
-            if ! xcodebuild -showdestinations \
+            if xcodebuild -showBuildSettings \
               "${{ steps.container.outputs.container_flag }}" \
               "${{ steps.container.outputs.container }}" \
               -scheme "$scheme" \
-              | tee "$destinations_log"; then
-              echo "Failed to read destinations for scheme: ${scheme}"
-              continue
-            fi
-
-            if grep -q "platform:iOS" "$destinations_log"; then
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              > /dev/null 2>&1; then
               selected="$scheme"
               break
             fi
-
-            echo "Scheme ${scheme} does not advertise platform:iOS."
           done < "$schemes_file"
 
           if [[ -z "$selected" ]]; then
-            echo "No shared iOS-capable scheme found. Ensure the iOS scheme is shared in xcshareddata/xcschemes." >&2
+            echo "No iOS-capable scheme found. Ensure the iOS scheme is shared." >&2
             exit 1
           fi
 
           echo "Selected scheme: $selected"
           echo "scheme=$selected" >> "$GITHUB_OUTPUT"
-
-      - name: Guard selected scheme
-        run: |
-          set -euo pipefail
-          if [[ "${{ steps.select.outputs.scheme }}" == "CodeEditorViewDemo" ]]; then
-            echo "Selected scheme must not be CodeEditorViewDemo. Refusing to proceed." >&2
-            exit 1
-          fi
-
-          xcodebuild -showdestinations \
-            "${{ steps.container.outputs.container_flag }}" \
-            "${{ steps.container.outputs.container }}" \
-            -scheme "${{ steps.select.outputs.scheme }}" \
-            | tee build/showdestinations-selected.txt
-
-          if ! grep -q "platform:iOS" build/showdestinations-selected.txt; then
-            echo "Selected scheme does not support platform:iOS." >&2
-            exit 1
-          fi
 
       - name: Build unsigned iOS app
         run: |
@@ -185,18 +137,14 @@ PY
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: Unsigned-ipa
           path: build/Unsigned.ipa
 
       - name: Upload build logs
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: xcodebuild-logs
           path: |
             build/xcodebuild.log
             build/schemes.json
-            build/xcodebuild-list.txt
-            build/showdestinations-*.txt
